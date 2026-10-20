@@ -5,6 +5,7 @@ load_dotenv()
 from neo4j import GraphDatabase
 from neo4j_graphrag.llm import OpenAILLM
 from neo4j_graphrag.generation import GraphRAG
+from neo4j_graphrag.retrievers import Text2CypherRetriever
 
 # Connect to Neo4j database
 driver = GraphDatabase.driver(
@@ -16,11 +17,54 @@ driver = GraphDatabase.driver(
 )
 
 # Create LLM 
-t2c_llm =
+t2c_llm = OpenAILLM(
+    model_name="gpt-5-mini",
+    model_params={
+        "reasoning_effort": "high"
+    }
+)
 
+# To increase the probability that the LLM will generate correct Cypher queries, 
+# we should provide examples queries about the things users might ask, 
+# these examples are fed to the retriever
+# Cypher examples as input/query pairs
+examples = [
+    "USER INPUT: 'Get user ratings for a movie?' QUERY: MATCH (u:User)-[r:RATED]->(m:Movie) WHERE m.title = 'Movie Title' RETURN r.rating"
+]
+
+# We can also limit the nodes, relationships, and properties used by the LLM 
+# to create the queries, in order to increase the accuracy and the correctness 
+# of the created queries, the schema then is fed to the retriever, 
+# we should always do this, especially when the graph is big with many 
+# nodes, relationships, and properties, 
+# note if the schema is not defind, the LLM will read the complete graph automatically   
+# Specify your own Neo4j schema
+neo4j_schema = """
+Node properties:
+Person {name: STRING, born: INTEGER}
+Movie {tagline: STRING, title: STRING, released: INTEGER}
+Genre {name: STRING}
+User {name: STRING}
+
+Relationship properties:
+ACTED_IN {role: STRING}
+RATED {rating: INTEGER}
+
+The relationships:
+(:Person)-[:ACTED_IN]->(:Movie)
+(:Person)-[:DIRECTED]->(:Movie)
+(:User)-[:RATED]->(:Movie)
+(:Movie)-[:IN_GENRE]->(:Genre)
+"""
 
 # Build the retriever
-retriever = 
+retriever = Text2CypherRetriever(
+    driver=driver,
+    neo4j_database=os.getenv("NEO4J_DATABASE"),
+    llm=t2c_llm,
+    examples= examples,
+    neo4j_schema= neo4j_schema
+)
 
 llm = OpenAILLM(model_name="gpt-5.2")
 rag = GraphRAG(retriever=retriever, llm=llm)
